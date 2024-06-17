@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <type name="Magento\Framework\App\FrontControllerInterface">
+        <plugin name="ddos_protect_front_controller_plugin" type="Mageplaza\DDoSProtect\Plugin\FrontControllerPlugin"/>
+    </type>
+
+    <type name="Magento\Framework\View\Element\UiComponent\DataProvider\CollectionFactory">
+        <arguments>
+            <argument name="collections" xsi:type="array">
+                <item name="ddosprotect_request_listing_data_source" xsi:type="string">Mageplaza\DDoSProtect\Model\ResourceModel\Request\Grid\Collection</item>
+            </argument>
+        </arguments>
+    </type>
+    <virtualType name="Mageplaza\DDoSProtect\Model\ResourceModel\Request\Grid\Collection" type="Magento\Framework\View\Element\UiComponent\DataProvider\SearchResult">
+        <arguments>
+            <argument name="mainTable" xsi:type="string">mageplaza_ddos_protect</argument>
+            <argument name="resourceModel" xsi:type="string">Mageplaza\DDoSProtect\Model\ResourceModel\Request</argument>
+        </arguments>
+    </virtualType>
+</config>
