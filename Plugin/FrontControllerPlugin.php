@@ -5,6 +5,7 @@ namespace Mageplaza\DDoSProtect\Plugin;
 use Closure;
 use DateTime;
 use Magento\Framework\App\ActionInterface;
+use Magento\Framework\App\CacheInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\FrontControllerInterface;
 use Magento\Framework\App\RequestInterface;
@@ -12,6 +13,8 @@ use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Redirect;
 use Magento\Framework\Controller\ResultFactory;
+use Magento\Store\Model\ScopeInterface;
+use Mageplaza\DDoSProtect\Model\Request;
 
 /**
  * Class FrontControllerPlugin
@@ -19,10 +22,10 @@ use Magento\Framework\Controller\ResultFactory;
  */
 class FrontControllerPlugin
 {
-    const MAX_REQUESTS       = 'ddos_protect/general/max_requests'; // Maximum number of requests allowed
-    const TIME_WINDOW        = 'ddos_protect/general/time_window'; // Time window in seconds
-    const XML_PATH_WHITELIST = 'ddos_protect/general/whitelist';
-    const ENABLE             = 'ddos_protect/general/enable';
+    /**
+     * @var CacheInterface
+     */
+    protected $cache;
 
     /**
      * @var ResultFactory
@@ -42,15 +45,18 @@ class FrontControllerPlugin
     /**
      * Constructor
      *
+     * @param CacheInterface $cache
      * @param ResultFactory $resultFactory
      * @param ResourceConnection $resource
      * @param ScopeConfigInterface $scopeConfig
      */
     public function __construct(
+        CacheInterface $cache,
         ResultFactory $resultFactory,
         ResourceConnection $resource,
         ScopeConfigInterface $scopeConfig
     ) {
+        $this->cache         = $cache;
         $this->resultFactory = $resultFactory;
         $this->resource      = $resource;
         $this->scopeConfig   = $scopeConfig;
@@ -67,123 +73,74 @@ class FrontControllerPlugin
      */
     public function aroundDispatch(FrontControllerInterface $subject, Closure $proceed, RequestInterface $request)
     {
-
         $result = $proceed($request);
 
-        if ($request->getParam('is_protect_error_index') || !$this->isEnable()) {
-
+        if ($request->getParam('is_protect_error_index')) {
             return $result;
         }
+        /*add client ip to cache*/
+        $this->appendDataToCache(Request::CLIENT_IP_CACHE_KEY, $request->getClientIp());
+        $ipAttack = $this->cache->load(Request::IP_ATTACK);
+        if ($ipAttack) {
+            $ipAttack = json_decode($ipAttack, true);
+            if (in_array($request->getClientIp(), $ipAttack)) {
+                /** @var Redirect $resultRedirect */
+                $resultRedirect = $this->resultFactory->create(ResultFactory::TYPE_REDIRECT);
+                $resultRedirect->setPath(
+                    'protect/error',
+                    ['is_protect_error_index' => true]
+                ); // Redirect to a custom error page
 
-        if ($this->isDDoSAttack($request)) {
-            die('Your request has been identified as potentially harmful. Please try again later.');
+                return $resultRedirect;
+            }
         }
 
         return $result;
     }
 
     /**
-     * Check if the request is part of a DDoS attack
+     * Save data to cache
      *
-     * @param RequestInterface $request
-     *
-     * @return bool
+     * @param string $cacheKey
+     * @param array $data
+     * @param int $lifetime
+     * @return void
      */
-    protected function isDDoSAttack(RequestInterface $request)
+    protected function saveDataToCache($cacheKey, array $data, $lifetime = 3600)
     {
-        $ipAddress = $request->getClientIp();
-        // Check if the IP is in the whitelist
-        $whitelist = $this->getWhitelist();
-        if (in_array($ipAddress, $whitelist)) {
-            return false;
-        }
+        $serializedData = json_encode($data);
+        $this->cache->save($serializedData, $cacheKey, [], $lifetime);
+    }
 
-        $connection = $this->resource->getConnection();
-        $tableName  = $this->resource->getTableName('mageplaza_ddos_protect');
-        // Calculate the time 15 minutes ago
-        $currentTime = time();
-        $startTime   = $currentTime - 900; // 900 seconds = 15 minutes
+    /**
+     * Get data from cache
+     *
+     * @param string $cacheKey
+     * @return array|null
+     */
+    protected function getDataFromCache($cacheKey)
+    {
+        $cachedData = $this->cache->load($cacheKey);
 
-        $select = $connection->select()
-            ->from($tableName)
-            ->where('ip_address = ?', $ipAddress)
-            ->where('last_request_time >= ?', date('Y-m-d H:i:s', $startTime));
-
-        $result = $connection->fetchRow($select);
-
-        if ($result) {
-            $requestCount    = (int) $result['request_count'];
-            $lastRequestTime = strtotime($result['last_request_time']);
-            $writer          = new \Zend_Log_Writer_Stream(BP . '/var/log/Neil.log');
-            $logger          = new \Zend_Log();
-            $logger->addWriter($writer);
-            $logger->info(json_encode($result));
-
-            if ((time() - $lastRequestTime) <= $this->getTimeWindow()) {
-                if ($requestCount >= $this->getMaxRequests()) {
-                    return true;
-                } else {
-                    $connection->update(
-                        $tableName,
-                        ['request_count' => $requestCount + 1],
-                        ['entity_id = ?' => $result['entity_id']]
-                    );
-                }
-            } else {
-                // Reset Count Request after more time have no request 60 second | self::TIME_WINDOW
-                $connection->update(
-                    $tableName,
-                    ['request_count' => 1, 'last_request_time' => (new DateTime())->format('Y-m-d H:i:s')],
-                    ['entity_id = ?' => $result['entity_id']]
-                );
-            }
+        if ($cachedData) {
+            return json_decode($cachedData, true);
         } else {
-            $connection->insert(
-                $tableName,
-                [
-                    'ip_address'        => $ipAddress,
-                    'request_count'     => 1,
-                    'last_request_time' => (new DateTime())->format('Y-m-d H:i:s')
-                ]
-            );
+            return null;
         }
-
-        return false;
     }
 
     /**
-     * Get the IP whitelist from configuration
+     * Append data to existing cache key
      *
-     * @return array
+     * @param string $cacheKey
+     * @param string $clientIP
+     * @param int $lifetime
+     * @return void
      */
-    protected function getWhitelist()
+    protected function appendDataToCache($cacheKey, $clientIP, $lifetime = 3600)
     {
-        $whitelist = $this->scopeConfig->getValue(self::XML_PATH_WHITELIST);
-
-        return $whitelist ? array_map('trim', explode(',', $whitelist)) : [];
-    }
-
-    /**
-     * @return int
-     */
-    protected function getTimeWindow()
-    {
-        return (int) $this->scopeConfig->getValue(self::TIME_WINDOW);
-    }
-
-    /**
-     * @return int
-     */
-    protected function getMaxRequests()
-    {
-        return (int) $this->scopeConfig->getValue(self::MAX_REQUESTS);
-    }
-
-    /**
-     * @return int
-     */
-    protected function isEnable()
-    {
-        return (int) $this->scopeConfig->getValue(self::ENABLE);
+        $existingData = $this->getDataFromCache($cacheKey) ?: [];
+        $existingData[] = $clientIP;
+        $this->saveDataToCache($cacheKey, $existingData, $lifetime);
     }
 }
