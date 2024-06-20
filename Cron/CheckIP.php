@@ -102,7 +102,7 @@ class CheckIP
                 }
             }
         }
-        $this->cache->save(json_encode($checkAttack), 'ip_attack', [], 3600);
+        $this->cache->save(json_encode($checkAttack), Request::IP_ATTACK, [], 3600);
 
         return $this;
     }
@@ -110,9 +110,11 @@ class CheckIP
     /**
      * Check if the request is part of a DDoS attack
      *
+     * @param string $ipAddress
+     *
      * @return bool
      */
-    protected function isDDoSAttack($ipAddress)
+    protected function isDDoSAttack(string $ipAddress)
     {
         // Check if the IP is in the whitelist
         $whitelist = $this->getWhitelist();
@@ -182,14 +184,18 @@ class CheckIP
     }
 
     /**
+     * GetTimeWindow
+     *
      * @return int
      */
     protected function getTimeWindow()
     {
-        $this->getConfig(self::TIME_WINDOW);
+        return $this->getConfig(self::TIME_WINDOW);
     }
 
     /**
+     * GetMaxRequests
+     *
      * @return int
      */
     protected function getMaxRequests()
