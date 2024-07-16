@@ -1,7 +1,12 @@
 <?xml version="1.0" ?>
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Config/etc/menu.xsd">
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Backend:etc/menu.xsd">
     <menu>
-        <add id="Mageplaza_DDoSProtect::ddos_protect" title="DDoS Protect" module="Mageplaza_DDoSProtect" sortOrder="50" resource="Mageplaza_DDoSProtect::ddos_protect"/>
-        <add id="Mageplaza_DDoSProtect::requests" title="Requests" module="Mageplaza_DDoSProtect" sortOrder="10" parent="Mageplaza_DDoSProtect::ddos_protect" action="ddosprotect/request/index" resource="Mageplaza_DDoSProtect::requests"/>
+        <add id="Mageplaza_DDoSProtect::ddos_protect" title="DDoS Protect"
+             module="Mageplaza_DDoSProtect" sortOrder="40" parent="Magento_Backend::system"
+             resource="Mageplaza_DDoSProtect::ddos_protect" />
+
+        <add id="Mageplaza_DDoSProtect::requests" title="Requests" module="Mageplaza_DDoSProtect" sortOrder="10"
+             parent="Mageplaza_DDoSProtect::ddos_protect" action="ddosprotect/request/index"
+             resource="Mageplaza_DDoSProtect::requests"/>
     </menu>
 </config>
