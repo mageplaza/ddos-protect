@@ -5,8 +5,11 @@
              module="Mageplaza_DDoSProtect" sortOrder="40" parent="Magento_Backend::system"
              resource="Mageplaza_DDoSProtect::ddos_protect" />
 
-        <add id="Mageplaza_DDoSProtect::requests" title="Requests" module="Mageplaza_DDoSProtect" sortOrder="10"
+        <add id="Mageplaza_DDoSProtect::requests" title="Requests IP Banned" module="Mageplaza_DDoSProtect" sortOrder="10"
              parent="Mageplaza_DDoSProtect::ddos_protect" action="ddosprotect/request/index"
              resource="Mageplaza_DDoSProtect::requests"/>
+        <add id="Mageplaza_DDoSProtect::configuration" title="Configuration" module="Mageplaza_DDoSProtect" sortOrder="50"
+             parent="Mageplaza_DDoSProtect::ddos_protect" action="adminhtml/system_config/edit/section/ddos_protect/"
+             resource="Mageplaza_DDoSProtect::configuration"/>
     </menu>
 </config>
