@@ -51,13 +51,6 @@ class AddDDoSProtectTable implements SchemaPatchInterface
                     'IP Address'
                 )
                 ->addColumn(
-                    'request_count',
-                    Table::TYPE_INTEGER,
-                    null,
-                    ['nullable' => false, 'default' => '0'],
-                    'Request Count'
-                )
-                ->addColumn(
                     'last_request_time',
                     Table::TYPE_TIMESTAMP,
                     null,

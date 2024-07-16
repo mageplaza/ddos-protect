@@ -3,15 +3,12 @@
 namespace Mageplaza\DDoSProtect\Plugin;
 
 use Closure;
-use DateTime;
 use Magento\Framework\App\ActionInterface;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\FrontControllerInterface;
 use Magento\Framework\App\RequestInterface;
-use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Redirect;
-use Magento\Framework\Controller\ResultFactory;
+use Mageplaza\DDoSProtect\Helper\DDos;
 
 /**
  * Class FrontControllerPlugin
@@ -19,41 +16,21 @@ use Magento\Framework\Controller\ResultFactory;
  */
 class FrontControllerPlugin
 {
-    const MAX_REQUESTS       = 'ddos_protect/general/max_requests'; // Maximum number of requests allowed
-    const TIME_WINDOW        = 'ddos_protect/general/time_window'; // Time window in seconds
-    const XML_PATH_WHITELIST = 'ddos_protect/general/whitelist';
-    const ENABLE             = 'ddos_protect/general/enable';
 
     /**
-     * @var ResultFactory
+     * @var DDos
      */
-    protected $resultFactory;
+    protected $helperData;
 
     /**
-     * @var ResourceConnection
-     */
-    protected $resource;
-
-    /**
-     * @var ScopeConfigInterface
-     */
-    protected $scopeConfig;
-
-    /**
-     * Constructor
+     * FrontControllerPlugin constructor.
      *
-     * @param ResultFactory $resultFactory
-     * @param ResourceConnection $resource
-     * @param ScopeConfigInterface $scopeConfig
+     * @param DDos $helperData
      */
     public function __construct(
-        ResultFactory $resultFactory,
-        ResourceConnection $resource,
-        ScopeConfigInterface $scopeConfig
+        DDos $helperData
     ) {
-        $this->resultFactory = $resultFactory;
-        $this->resource      = $resource;
-        $this->scopeConfig   = $scopeConfig;
+        $this->helperData = $helperData;
     }
 
     /**
@@ -67,123 +44,55 @@ class FrontControllerPlugin
      */
     public function aroundDispatch(FrontControllerInterface $subject, Closure $proceed, RequestInterface $request)
     {
-
         $result = $proceed($request);
 
-        if ($request->getParam('is_protect_error_index') || !$this->isEnable()) {
-
+        /*check request path info config*/
+        if (!$this->validatePathRequest($request)) {
             return $result;
         }
 
-        if ($this->isDDoSAttack($request)) {
-            die('Your request has been identified as potentially harmful. Please try again later.');
+        /*add client ip to cache*/
+        $ipClient  = $request->getClientIp();
+        $ipAttacks = $this->helperData->loadIpAttackCache();
+        if (!empty($ipAttacks) && in_array($ipClient, $ipAttacks)) {
+            die('You have baned');
         }
+        $this->helperData->handleClientIp($ipClient);
 
         return $result;
     }
 
     /**
-     * Check if the request is part of a DDoS attack
-     *
-     * @param RequestInterface $request
+     * @param $request
      *
      * @return bool
      */
-    protected function isDDoSAttack(RequestInterface $request)
+    public function validatePathRequest($request)
     {
-        $ipAddress = $request->getClientIp();
-        // Check if the IP is in the whitelist
-        $whitelist = $this->getWhitelist();
-        if (in_array($ipAddress, $whitelist)) {
+        $limitRequest = $this->helperData->getPath();
+        if (!$limitRequest) {
             return false;
         }
-
-        $connection = $this->resource->getConnection();
-        $tableName  = $this->resource->getTableName('mageplaza_ddos_protect');
-        // Calculate the time 15 minutes ago
-        $currentTime = time();
-        $startTime   = $currentTime - 900; // 900 seconds = 15 minutes
-
-        $select = $connection->select()
-            ->from($tableName)
-            ->where('ip_address = ?', $ipAddress)
-            ->where('last_request_time >= ?', date('Y-m-d H:i:s', $startTime));
-
-        $result = $connection->fetchRow($select);
-
-        if ($result) {
-            $requestCount    = (int) $result['request_count'];
-            $lastRequestTime = strtotime($result['last_request_time']);
-            $writer          = new \Zend_Log_Writer_Stream(BP . '/var/log/Neil.log');
-            $logger          = new \Zend_Log();
-            $logger->addWriter($writer);
-            $logger->info(json_encode($result));
-
-            if ((time() - $lastRequestTime) <= $this->getTimeWindow()) {
-                if ($requestCount >= $this->getMaxRequests()) {
-                    return true;
-                } else {
-                    $connection->update(
-                        $tableName,
-                        ['request_count' => $requestCount + 1],
-                        ['entity_id = ?' => $result['entity_id']]
-                    );
-                }
-            } else {
-                // Reset Count Request after more time have no request 60 second | self::TIME_WINDOW
-                $connection->update(
-                    $tableName,
-                    ['request_count' => 1, 'last_request_time' => (new DateTime())->format('Y-m-d H:i:s')],
-                    ['entity_id = ?' => $result['entity_id']]
-                );
+        $pathInfo = explode('/', $request->getPathInfo());
+        $paths    = explode("\n", str_replace("\r", '', $limitRequest));
+        foreach ($paths as $path) {
+            $match   = 0;
+            $urlKeys = explode('/', $path);
+            if (count($urlKeys) <= 2 && str_contains($request->getPathInfo(), $path)) {
+                return true;
             }
-        } else {
-            $connection->insert(
-                $tableName,
-                [
-                    'ip_address'        => $ipAddress,
-                    'request_count'     => 1,
-                    'last_request_time' => (new DateTime())->format('Y-m-d H:i:s')
-                ]
-            );
+            foreach ($urlKeys as $index => $urlKeyValue) {
+                if ($urlKeyValue !== $pathInfo[$index]) {
+                    $match = 0;
+                    continue;
+                }
+                $match++;
+            }
+            if ($match) {
+                return true;
+            }
         }
 
         return false;
-    }
-
-    /**
-     * Get the IP whitelist from configuration
-     *
-     * @return array
-     */
-    protected function getWhitelist()
-    {
-        $whitelist = $this->scopeConfig->getValue(self::XML_PATH_WHITELIST);
-
-        return $whitelist ? array_map('trim', explode(',', $whitelist)) : [];
-    }
-
-    /**
-     * @return int
-     */
-    protected function getTimeWindow()
-    {
-        return (int) $this->scopeConfig->getValue(self::TIME_WINDOW);
-    }
-
-    /**
-     * @return int
-     */
-    protected function getMaxRequests()
-    {
-        return (int) $this->scopeConfig->getValue(self::MAX_REQUESTS);
-    }
-
-    /**
-     * @return int
-     */
-    protected function isEnable()
-    {
-        return (int) $this->scopeConfig->getValue(self::ENABLE);
     }
 }
