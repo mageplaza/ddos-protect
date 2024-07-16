@@ -3,10 +3,9 @@
     <default>
         <ddos_protect>
             <general>
-<!--                <whitelist>127.0.0.1,111.</whitelist>-->
+<!--                <whitelist>127.0.0.1</whitelist>-->
                 <time_window>60</time_window>
                 <max_requests>100</max_requests>
-                <enable>1</enable>
             </general>
         </ddos_protect>
     </default>

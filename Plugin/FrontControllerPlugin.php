@@ -3,18 +3,12 @@
 namespace Mageplaza\DDoSProtect\Plugin;
 
 use Closure;
-use DateTime;
 use Magento\Framework\App\ActionInterface;
-use Magento\Framework\App\CacheInterface;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\FrontControllerInterface;
 use Magento\Framework\App\RequestInterface;
-use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Redirect;
-use Magento\Framework\Controller\ResultFactory;
-use Magento\Store\Model\ScopeInterface;
-use Mageplaza\DDoSProtect\Model\Request;
+use Mageplaza\DDoSProtect\Helper\DDos;
 
 /**
  * Class FrontControllerPlugin
@@ -22,44 +16,21 @@ use Mageplaza\DDoSProtect\Model\Request;
  */
 class FrontControllerPlugin
 {
-    /**
-     * @var CacheInterface
-     */
-    protected $cache;
 
     /**
-     * @var ResultFactory
+     * @var DDos
      */
-    protected $resultFactory;
+    protected $helperData;
 
     /**
-     * @var ResourceConnection
-     */
-    protected $resource;
-
-    /**
-     * @var ScopeConfigInterface
-     */
-    protected $scopeConfig;
-
-    /**
-     * Constructor
+     * FrontControllerPlugin constructor.
      *
-     * @param CacheInterface $cache
-     * @param ResultFactory $resultFactory
-     * @param ResourceConnection $resource
-     * @param ScopeConfigInterface $scopeConfig
+     * @param DDos $helperData
      */
     public function __construct(
-        CacheInterface $cache,
-        ResultFactory $resultFactory,
-        ResourceConnection $resource,
-        ScopeConfigInterface $scopeConfig
+        DDos $helperData
     ) {
-        $this->cache         = $cache;
-        $this->resultFactory = $resultFactory;
-        $this->resource      = $resource;
-        $this->scopeConfig   = $scopeConfig;
+        $this->helperData = $helperData;
     }
 
     /**
@@ -75,72 +46,53 @@ class FrontControllerPlugin
     {
         $result = $proceed($request);
 
-        if ($request->getParam('is_protect_error_index')) {
+        /*check request path info config*/
+        if (!$this->validatePathRequest($request)) {
             return $result;
         }
-        /*add client ip to cache*/
-        $this->appendDataToCache(Request::CLIENT_IP_CACHE_KEY, $request->getClientIp());
-        $ipAttack = $this->cache->load(Request::IP_ATTACK);
-        if ($ipAttack) {
-            $ipAttack = json_decode($ipAttack, true);
-            if (in_array($request->getClientIp(), $ipAttack)) {
-                /** @var Redirect $resultRedirect */
-                $resultRedirect = $this->resultFactory->create(ResultFactory::TYPE_REDIRECT);
-                $resultRedirect->setPath(
-                    'protect/error',
-                    ['is_protect_error_index' => true]
-                ); // Redirect to a custom error page
 
-                return $resultRedirect;
-            }
+        /*add client ip to cache*/
+        $ipClient  = $request->getClientIp();
+        $ipAttacks = $this->helperData->loadIpAttackCache();
+        if (!empty($ipAttacks) && in_array($ipClient, $ipAttacks)) {
+            die('You have baned');
         }
+        $this->helperData->handleClientIp($ipClient);
 
         return $result;
     }
 
     /**
-     * Save data to cache
+     * @param $request
      *
-     * @param string $cacheKey
-     * @param array $data
-     * @param int $lifetime
-     * @return void
+     * @return bool
      */
-    protected function saveDataToCache($cacheKey, array $data, $lifetime = 3600)
+    public function validatePathRequest($request)
     {
-        $serializedData = json_encode($data);
-        $this->cache->save($serializedData, $cacheKey, [], $lifetime);
-    }
-
-    /**
-     * Get data from cache
-     *
-     * @param string $cacheKey
-     * @return array|null
-     */
-    protected function getDataFromCache($cacheKey)
-    {
-        $cachedData = $this->cache->load($cacheKey);
-
-        if ($cachedData) {
-            return json_decode($cachedData, true);
-        } else {
-            return null;
+        $limitRequest = $this->helperData->getPath();
+        if (!$limitRequest) {
+            return false;
         }
-    }
+        $pathInfo = explode('/', $request->getPathInfo());
+        $paths    = explode("\n", str_replace("\r", '', $limitRequest));
+        foreach ($paths as $path) {
+            $match   = 0;
+            $urlKeys = explode('/', $path);
+            if (count($urlKeys) <= 2 && str_contains($request->getPathInfo(), $path)) {
+                return true;
+            }
+            foreach ($urlKeys as $index => $urlKeyValue) {
+                if ($urlKeyValue !== $pathInfo[$index]) {
+                    $match = 0;
+                    continue;
+                }
+                $match++;
+            }
+            if ($match) {
+                return true;
+            }
+        }
 
-    /**
-     * Append data to existing cache key
-     *
-     * @param string $cacheKey
-     * @param string $clientIP
-     * @param int $lifetime
-     * @return void
-     */
-    protected function appendDataToCache($cacheKey, $clientIP, $lifetime = 3600)
-    {
-        $existingData = $this->getDataFromCache($cacheKey) ?: [];
-        $existingData[] = $clientIP;
-        $this->saveDataToCache($cacheKey, $existingData, $lifetime);
+        return false;
     }
 }

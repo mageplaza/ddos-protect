@@ -22,7 +22,7 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
     <group id="default">
-        <job name="mp_ddos_check_client_ip" instance="Mageplaza\DDoSProtect\Cron\CheckIP" method="execute">
+        <job name="mp_ddos_check_client_ip" instance="Mageplaza\DDoSProtect\Cron\SaveAttackIP" method="execute">
             <schedule>*/5 * * * *</schedule>
         </job>
     </group>
