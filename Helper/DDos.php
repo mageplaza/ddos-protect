@@ -132,6 +132,7 @@ class DDos
                 if ($clientIP === $ip) {
                     if ($this->isDDoSAttack($clientIP, $clientsInfo)) {
                         $this->appendAttackIpToCache($clientIP, $clientData);
+                        $this->saveIpAttackToDB();
                     }
                     break;
                 } else {
