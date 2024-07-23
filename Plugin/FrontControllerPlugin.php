@@ -47,14 +47,15 @@ class FrontControllerPlugin
         $result = $proceed($request);
 
         /*check request path info config*/
-        if (!$this->validatePathRequest($request)) {
+        if ($this->onlyProtectSpecialRequest($request)) {
             return $result;
         }
 
         /*add client ip to cache*/
         $ipClient  = $request->getClientIp();
         $ipAttacks = $this->helperData->loadIpAttackCache();
-        if (!empty($ipAttacks) && in_array($ipClient, $ipAttacks)) {
+
+        if (!empty($ipAttacks) && in_array($ipClient, array_keys($ipAttacks))) {
             die('You have baned');
         }
         $this->helperData->handleClientIp($ipClient);
@@ -67,7 +68,7 @@ class FrontControllerPlugin
      *
      * @return bool
      */
-    public function validatePathRequest($request)
+    public function onlyProtectSpecialRequest($request)
     {
         $limitRequest = $this->helperData->getPath();
         if (!$limitRequest) {
